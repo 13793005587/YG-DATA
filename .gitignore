@@ -31,10 +31,15 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+# 例外：打包配方属于源码，需纳入版本控制
+!YG-DATA.spec
 
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt
+
+# 本地临时目录（测试与调试产物）
+tmp/
 
 # Unit test / coverage reports
 htmlcov/

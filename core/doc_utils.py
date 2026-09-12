@@ -1,6 +1,45 @@
+"""Word / WPS 报告解析：从仪器导出的 .doc/.docx 表格中提取平均接触角。
+
+设计要点：
+  * ``pywin32`` 采用**惰性导入**——没装 pywin32 或本机没有 Office 时，
+    首页与导电性计算等其它功能仍可正常使用，只在真正导入 Word 时提示。
+  * 返回 ``(结果列表, 失败明细)``，失败文件不会被静默丢弃，UI 可以把
+    "哪几个文件没读到、为什么" 明确告诉用户。
+  * COM 线程初始化在本模块内部完成（后台线程调用不会踩坑）。
+  * 所有诊断信息走 logging，不再用 print（发布版控制台不存在）。
+"""
+
+import logging
 import os
 import re
-import win32com.client
+
+logger = logging.getLogger(__name__)
+
+# 惰性导入的 COM 客户端（模块级变量，便于测试时替换）
+win32com = None
+
+
+class DocParseError(RuntimeError):
+    """无法启动 Word/WPS，或本机缺少 COM 支持。"""
+
+
+class ComUnavailableError(DocParseError):
+    """未安装 pywin32。"""
+
+
+def _import_win32com():
+    global win32com
+    if win32com is not None:
+        return win32com
+    try:
+        import win32com.client as _client  # noqa: PLC0415 - 故意的惰性导入
+    except ImportError as e:
+        raise ComUnavailableError(
+            "缺少 pywin32，无法读取 Word 报告。\n"
+            "请执行：pip install pywin32"
+        ) from e
+    win32com = _client
+    return win32com
 
 
 # ---------- 基础清洗 / 数值解析 ----------
@@ -46,7 +85,7 @@ def parse_number(text):
 def _cell_text(table, i, j):
     try:
         return _clean(table.Cell(i, j).Range.Text)
-    except Exception:
+    except Exception:  # noqa: BLE001 - 合并单元格会直接抛错，属正常情况
         return ""
 
 
@@ -103,7 +142,8 @@ def extract_angle_from_tables(doc, keywords=("平均角度", "平均接触角"))
         try:
             row_count = table.Rows.Count
             col_count = table.Columns.Count
-        except Exception:
+        except Exception:  # noqa: BLE001 - 个别表格无 Rows/Columns，跳过
+            logger.debug("跳过无法读取行列数的表格", exc_info=True)
             continue
 
         for i in range(1, row_count + 1):
@@ -133,50 +173,103 @@ def extract_angle_from_tables(doc, keywords=("平均角度", "平均接触角"))
     return best[1] if best else None
 
 
-# ---------- 对外主入口 ----------
+# ---------- Word / WPS 生命周期 ----------
 
-def parse_doc_contact_angle(file_paths):
-    """静默后台提取一组 Word 文档中的接触角平均值"""
-    results = []
-    if not file_paths:
-        return results
-
-    word = None
+def _try_dispatch(prog_id):
+    client = _import_win32com()
     try:
-        try:
-            word = win32com.client.DispatchEx("Word.Application")
-        except Exception:
-            word = win32com.client.DispatchEx("KWPS.Application")
-        word.Visible = False
-        word.DisplayAlerts = 0
-    except Exception as e:
-        raise RuntimeError(f"无法启动 Word/WPS 后台进程：{e}")
+        return client.DispatchEx(prog_id)
+    except Exception as e:  # noqa: BLE001 - COM 抛出的异常类型不固定
+        logger.debug("DispatchEx(%s) 失败：%s", prog_id, e)
+        return None
 
+
+def _open_word_app():
+    """依次尝试 Microsoft Word 与 WPS；都失败时抛出带排查建议的错误。"""
+    app = _try_dispatch("Word.Application")
+    if app is None:
+        app = _try_dispatch("KWPS.Application")
+    if app is None:
+        raise DocParseError(
+            "无法启动 Word / WPS\n"
+            "请确认本机已安装 Microsoft Word 或 WPS Office，"
+            "并且当前用户有权限调用其 COM 接口。"
+        )
+
+    # 这两个属性并非所有 Office/WPS 版本都支持，失败也不应中断流程
+    for name, value in (("Visible", False), ("DisplayAlerts", 0)):
+        try:
+            setattr(app, name, value)
+        except Exception:  # noqa: BLE001
+            logger.debug("设置 %s 失败（不影响解析）", name, exc_info=True)
+    return app
+
+
+def _parse_with_word(file_paths):
+    """实际执行解析，返回 (results, failures)。"""
+    results = []
+    failures = []
+
+    app = _open_word_app()
     try:
         for file_path in file_paths:
             doc = None
             file_name = os.path.basename(file_path)
             try:
-                doc = word.Documents.Open(os.path.abspath(file_path), ReadOnly=True)
+                doc = app.Documents.Open(os.path.abspath(file_path), ReadOnly=True)
                 angle = extract_angle_from_tables(doc)
-                if angle is not None:
-                    results.append({'filename': file_name, 'angle': angle})
-                    print(f"[OK] {file_name}: {angle}")
+                if angle is None:
+                    reason = "未在文档表格中找到“平均角度/平均接触角”字段"
+                    failures.append({"filename": file_name, "reason": reason})
+                    logger.warning("[MISS] %s：%s", file_name, reason)
                 else:
-                    print(f"[MISS] {file_name}: 未找到平均角度")
-            except Exception as e:
-                print(f"[ERR] {file_name}: {e}")
+                    results.append({"filename": file_name, "angle": angle})
+                    logger.info("[OK] %s：%s", file_name, angle)
+            except Exception as e:  # noqa: BLE001 - 单个文件失败不应中断整批
+                failures.append({"filename": file_name, "reason": str(e)})
+                logger.warning("[ERR] %s：%s", file_name, e)
             finally:
                 if doc is not None:
                     try:
                         doc.Close(False)
-                    except Exception:
-                        pass
+                    except Exception:  # noqa: BLE001
+                        logger.debug("关闭文档失败：%s", file_name, exc_info=True)
     finally:
-        if word is not None:
-            try:
-                word.Quit()
-            except Exception:
-                pass
+        try:
+            app.Quit()
+        except Exception:  # noqa: BLE001
+            logger.debug("退出 Word/WPS 失败", exc_info=True)
 
-    return results
+    return results, failures
+
+
+def parse_doc_contact_angle(file_paths):
+    """后台提取一组 Word 文档中的接触角平均值。
+
+    返回 ``(results, failures)``：
+      * results  —— ``[{"filename": str, "angle": float}, ...]``
+      * failures —— ``[{"filename": str, "reason": str}, ...]``
+
+    本函数需要在后台线程中调用；内部负责 COM 的初始化与反初始化。
+    """
+    if not file_paths:
+        return [], []
+
+    pythoncom = None
+    try:
+        import pythoncom  # noqa: PLC0415 - 随 pywin32 一起提供，惰性导入
+
+        pythoncom.CoInitialize()
+    except ImportError:
+        raise ComUnavailableError(
+            "缺少 pywin32（pythoncom），无法读取 Word 报告。\n"
+            "请执行：pip install pywin32"
+        ) from None
+
+    try:
+        return _parse_with_word(file_paths)
+    finally:
+        try:
+            pythoncom.CoUninitialize()
+        except Exception:  # noqa: BLE001
+            logger.debug("CoUninitialize 失败", exc_info=True)

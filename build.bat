@@ -1,63 +1,57 @@
 @echo off
-chcp 65001 >nul
 cd /d "%~dp0"
 
 echo ====================================
-echo   å¼€å§‹æ‰“åŒ… YG-DATA
+echo   ¿ªÊ¼´ò°ü YG-DATA
 echo ====================================
 
-echo [0/3] æ£€æŸ¥ç¯å¢ƒ...
+echo [0/4] ¼ì²é»·¾³...
 if not exist ".venv\Scripts\pyinstaller.exe" (
-    echo [é”™è¯¯] æœªæ‰¾åˆ° PyInstallerï¼Œè¯·å…ˆæ‰§è¡Œï¼š
+    echo [´íÎó] Î´ÕÒµ½ PyInstaller£¬ÇëÏÈÖ´ĞĞ£º
     echo     .venv\Scripts\activate
-    echo     pip install pyinstaller
+    echo     pip install -r requirements-dev.txt
     pause
     exit /b 1
 )
 
 if not exist "resources\app_icon.ico" (
-    echo [è­¦å‘Š] æœªæ‰¾åˆ° resources\app_icon.icoï¼Œå°†ä¸ä½¿ç”¨è‡ªå®šä¹‰å›¾æ ‡
-    set ICON_ARG=
-    set DATA_ARG=
-) else (
-    set ICON_ARG=--icon "resources\app_icon.ico"
-    set DATA_ARG=--add-data "resources;resources"
+    echo [´íÎó] Î´ÕÒµ½ resources\app_icon.ico£¬ÎŞ·¨´ò°ü
+    pause
+    exit /b 1
 )
 
-echo [1/3] æ¸…ç†æ—§çš„æ„å»ºæ–‡ä»¶...
+if not exist "YG-DATA.spec" (
+    echo [´íÎó] Î´ÕÒµ½ YG-DATA.spec
+    pause
+    exit /b 1
+)
+
+echo [1/4] ÇåÀí¾ÉµÄ¹¹½¨ÎÄ¼ş...
 if exist build rmdir /s /q build
 if exist dist rmdir /s /q dist
 
-echo [2/3] å¼€å§‹æ‰“åŒ…...
-.venv\Scripts\pyinstaller.exe --noconsole --onefile ^
-  --name YG-DATA ^
-  %ICON_ARG% ^
-  %DATA_ARG% ^
-  --hidden-import win32com ^
-  --hidden-import win32com.client ^
-  --hidden-import pythoncom ^
-  --hidden-import pywintypes ^
-  --hidden-import PySide6.QtNetwork ^
-  --collect-submodules win32com ^
-  --exclude-module PySide6.QtWebEngineCore ^
-  --exclude-module PySide6.QtWebEngineWidgets ^
-  --exclude-module PySide6.Qt3DCore ^
-  --exclude-module PySide6.QtCharts ^
-  --exclude-module PySide6.QtQuick ^
-  --exclude-module PySide6.QtQml ^
-  main.py
+echo [2/4] ¿ªÊ¼´ò°ü£¨Ê¹ÓÃ YG-DATA.spec£©...
+rem ´ò°ü²ÎÊıÈ«²¿¼¯ÖĞÔÚ YG-DATA.spec ÖĞ£¬±ÜÃâÃüÁîĞĞÓë spec Á½´¦²»Ò»ÖÂ
+.venv\Scripts\pyinstaller.exe --noconfirm YG-DATA.spec
 
 if errorlevel 1 (
     echo.
     echo ====================================
-    echo   æ‰“åŒ…å¤±è´¥ï¼è¯·æŸ¥çœ‹ä¸Šæ–¹é”™è¯¯ä¿¡æ¯
+    echo   ´ò°üÊ§°Ü£¡Çë²é¿´ÉÏ·½´íÎóĞÅÏ¢
     echo ====================================
     pause
     exit /b 1
 )
 
-echo [3/3] å®Œæˆï¼
+if not exist "dist\YG-DATA.exe" (
+    echo.
+    echo [´íÎó] ´ò°üÃüÁîÒÑ½áÊø£¬µ«Ã»ÓĞÉú³É dist\YG-DATA.exe
+    pause
+    exit /b 1
+)
+
+echo [3/4] Íê³É£¡
 echo.
-echo æˆå“ä½ç½®ï¼šdist\YG-DATA.exe
-echo.
+echo ³ÉÆ·Î»ÖÃ£ºdist\YG-DATA.exe
+echo [4/4] °´ÈÎÒâ¼ü¹Ø±Õ±¾´°¿Ú...
 pause

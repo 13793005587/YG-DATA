@@ -1,0 +1,167 @@
+<style>
+    h1 { color: #203040; font-size: 16pt; margin-bottom: 6px; }
+    h2 { color: #2a7; font-size: 13pt; margin-top: 22px;
+         border-bottom: 1px solid #e0e8ef; padding-bottom: 4px; }
+    h3 { color: #4a6075; font-size: 11.5pt; margin-top: 16px; }
+    p, li { line-height: 170%; }
+    code { background: #f2f6fa; padding: 1px 5px; border-radius: 3px;
+           color: #c04030; font-family: Consolas, monospace; }
+    .tip { background: #f4fbf6; border-left: 3px solid #2a7;
+           padding: 8px 12px; margin: 10px 0; color: #305040; }
+    .warn { background: #fff8f0; border-left: 3px solid #e8a040;
+            padding: 8px 12px; margin: 10px 0; color: #7a5020; }
+    .err { background: #fdf2f2; border-left: 3px solid #d05050;
+           padding: 8px 12px; margin: 10px 0; color: #7a3030; }
+</style>
+
+<h1>YG DATA 使用手册</h1>
+<p style="color:#6b7c8f;">数据处理自动化流程 · 接触角分析与表面能计算</p>
+
+<h2>一、总体流程</h2>
+<p>本软件把“仪器报告 → 数据提取 → 配对计算 → 结果导出”
+串成一条自动化流程，减少手工抄录与公式计算。</p>
+<ol>
+  <li>在首页点击需要使用的功能，或在菜单“计算方法”中切换</li>
+  <li>导入仪器导出的 Word 报告</li>
+  <li>在表格中核对数据，必要时手动修正或补充</li>
+  <li>点击“计算”得到结果</li>
+  <li>导出为 Excel 文件</li>
+</ol>
+
+<h2>二、表面能计算</h2>
+
+<h3>1. 导入数据</h3>
+<ul>
+  <li>点击 <b>导入水滴角</b>，选择所有水滴角 Word 文件</li>
+  <li>点击 <b>导入二碘甲烷接触角</b>，选择所有二碘甲烷 Word 文件</li>
+</ul>
+<div class="tip">
+  两个导入按钮都支持多选，导入顺序不影响结果。
+  软件会自动从报告中提取“平均角度”。
+</div>
+<div class="warn">
+  若部分文件未能提取到角度，程序会弹出 <b>导入失败明细</b> 窗口，
+  逐条列出“文件名 + 原因”，可一键复制。
+</div>
+
+<h3>2. 自动配对规则</h3>
+<p>软件按文件名进行配对：<b>去掉扩展名后文件名一致，视为同一样品</b>。</p>
+<ul>
+  <li>水滴角 <code>4.doc</code> 与 二碘甲烷 <code>4.doc</code> → 配成一行</li>
+  <li>文件名不同 → 视为不同样品，各自独立成行</li>
+</ul>
+<div class="warn">
+  请确保水滴角与二碘甲烷的文件名一致，否则不会被自动合并。
+</div>
+
+<h3>3. 表格列说明</h3>
+<table cellpadding="4">
+  <tr><th align="left">列名</th><th align="left">可编辑</th><th align="left">说明</th></tr>
+  <tr><td>序号</td><td>否</td><td>来源文件名（去扩展名），用于定位原始数据</td></tr>
+  <tr><td>样品</td><td>是</td><td>可输入数字、汉字、字母、符号等任意文本</td></tr>
+  <tr><td>水接触角</td><td>是</td><td>只能输入数字，需在 0°–180° 之间</td></tr>
+  <tr><td>二碘甲烷接触角</td><td>是</td><td>只能输入数字，需在 0°–180° 之间</td></tr>
+  <tr><td>极性分量 / 色散分量 / 估值方法 / 表面能</td><td>否</td><td>由计算自动生成</td></tr>
+</table>
+<div class="tip">
+  「序号」列是软件的内部标识，<b>不会导出到 Excel</b>。
+  修改「样品」列的名字不会影响配对与删除逻辑。
+</div>
+
+<h3>4. 表格操作</h3>
+<ul>
+  <li>单击单元格：选中该单元格</li>
+  <li>单击左侧行号：选中整行；<code>Ctrl</code> 加选、<code>Shift</code> 连续选择</li>
+  <li>双击单元格：进入编辑</li>
+  <li>按 <code>Delete</code>：清空选中单元格内容</li>
+  <li>点击表格下方 <b>+</b> 号：在末尾追加一行空行</li>
+  <li>右键菜单：
+    <ul>
+      <li>删除选中单元格内容</li>
+      <li>删除选中行</li>
+      <li>在上方 / 下方插入多行（可设置数量）</li>
+      <li>清空全部数据</li>
+    </ul>
+  </li>
+</ul>
+
+<h3>5. 计算与导出</h3>
+<ul>
+  <li>点击 <b>计算表面能</b>：按 OWRK 模型计算，结果写入后四列</li>
+  <li>点击 <b>导出.xlsx文件</b>：将当前表格内容导出为 Excel</li>
+</ul>
+<div class="tip">
+  如果某行只有一种角度，该行会保留但后四列留空；
+  计算完成时会提示成功配对、缺少数据的行数。
+</div>
+
+<h3>6. 关于「计算失败」</h3>
+<p>OWRK 方程并非对所有接触角组合都有实数解。当水接触角偏大
+（约 &gt; 96°）而二碘甲烷接触角偏小时，方程无解，属于<b>模型适用范围</b>
+问题，不是程序错误。</p>
+<div class="err">
+  出现该情况时，程序会在计算完成提示中列出<b>具体样品名与原因</b>，
+  不会静默留空。请核对数据，或确认两种角度没有填反。
+</div>
+
+<h2>三、导电性计算</h2>
+<ul>
+  <li>依次输入 样品名称、电阻 R (Ω)、长度 L (cm)、横截面积 A (cm²)</li>
+  <li>点击 <b>计算</b>：结果追加到下方表格</li>
+  <li>电阻率 ρ = R·A / L (Ω·cm)，电导率 σ = 1/ρ (S/cm)</li>
+  <li>点击 <b>导出.xlsx文件</b>：导出所有已计算记录</li>
+</ul>
+<div class="tip">
+  输入框只接受数字（支持科学计数法如 <code>1e-5</code>）；
+  表格中显示 4 位小数 / 6 位有效数字，导出的 Excel 保存<b>完整精度</b>数值。
+</div>
+
+<h2>四、常见问题</h2>
+
+<h3>导入时提示“未在文件中提取到有效接触角”</h3>
+<ul>
+  <li>确认文件是仪器原始导出的 Word 报告</li>
+  <li>确认报告里存在“平均角度”或“平均接触角”字段</li>
+  <li>本机需安装 Microsoft Word 或 WPS，读取 <code>.doc</code> 依赖 Office</li>
+  <li>点击提示窗口中的 <b>导入失败明细</b> 可查看每个文件的具体原因</li>
+</ul>
+
+<h3>计算后两行没有合并</h3>
+<ul>
+  <li>检查水滴角与二碘甲烷的文件名是否一致（去扩展名后）</li>
+  <li>若使用了后缀（如 <code>-I</code>），请改名后再导入</li>
+</ul>
+
+<h3>某行显示“计算失败”</h3>
+<ul>
+  <li>该角度组合超出 OWRK 模型适用范围（方程无实数解）</li>
+  <li>检查是否把水接触角与二碘甲烷接触角填反了</li>
+</ul>
+
+<h3>导出后 Excel 里是空行</h3>
+<ul>
+  <li>导出时会自动过滤全空行，只有含内容的行才会写入</li>
+</ul>
+
+<h3>导出时提示“无法写入文件”</h3>
+<ul>
+  <li>目标文件正在 Excel 中打开，请关闭后重试</li>
+  <li>或换一个没有写入限制的位置（如桌面）</li>
+</ul>
+
+<h3>程序异常退出</h3>
+<ul>
+  <li>菜单 <b>帮助 → 打开日志文件夹</b> 可查看崩溃与运行日志</li>
+  <li>反馈问题时请附上当天日志文件</li>
+</ul>
+
+<h2>五、环境与打包</h2>
+<ul>
+  <li>运行环境：Windows + Python 3.9 及以上 + PySide6</li>
+  <li>读取 .doc 需要本机安装 Microsoft Word 或 WPS</li>
+  <li>打包：双击 <code>build.bat</code>（内部使用 <code>YG-DATA.spec</code>）</li>
+</ul>
+
+<p style="margin-top:30px;color:#a0b0c0;text-align:center;">
+  © 2026 YG Lab · YG DATA
+</p>

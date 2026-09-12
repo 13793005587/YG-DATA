@@ -1,35 +1,60 @@
+"""导电性计算页面。"""
+
+import logging
+
 from PySide6.QtWidgets import (
-    QVBoxLayout, QHBoxLayout, QFormLayout, QGroupBox, QLineEdit,
-    QPushButton, QTableWidget, QTableWidgetItem, QFileDialog,
-    QMessageBox, QAbstractItemView
+    QAbstractItemView,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
 )
 
+from core.conductivity.calculator import (
+    DISPLAY_PRECISION,
+    HEADERS,
+    INPUT_PRECISION,
+    compute_conductivity,
+    fmt,
+)
+from views.dialogs.compat import qmessagebox
+from views.exporter import export_rows_with_dialog
+from views.models.sample_table_model import make_number_validator
 from views.pages.base_page import BaseCalculatorPage
-from core.conductivity.calculator import compute_conductivity
-from core.excel_export import export_to_excel
+
+logger = logging.getLogger(__name__)
+
+# 按钮常量取真实实现，不随测试替身变化
+_MessageBox = qmessagebox()
 
 
 class ConductivityPage(BaseCalculatorPage):
     PAGE_TITLE = "导电性计算"
     PAGE_KEY = "conductivity"
 
-    HEADERS = ["样品名称", "电阻 (Ω)", "长度 (cm)", "横截面积 (cm²)",
-               "电阻率 (Ω·cm)", "电导率 (S/cm)"]
+    HEADERS = HEADERS
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.result_data = []
         self._build_ui()
 
+    # ==================== UI ====================
     def _build_ui(self):
         layout = QVBoxLayout(self)
 
         input_group = QGroupBox("输入参数")
         form = QFormLayout()
         self.name_edit = QLineEdit()
-        self.res_edit = QLineEdit()
-        self.len_edit = QLineEdit()
-        self.area_edit = QLineEdit()
+        self.name_edit.setPlaceholderText("留空时默认记为「样品」")
+        self.res_edit = self._make_number_edit("例如 1250")
+        self.len_edit = self._make_number_edit("例如 2.5")
+        self.area_edit = self._make_number_edit("例如 0.04")
         form.addRow("样品名称：", self.name_edit)
         form.addRow("电阻 R (Ω)：", self.res_edit)
         form.addRow("长度 L (cm)：", self.len_edit)
@@ -44,6 +69,7 @@ class ConductivityPage(BaseCalculatorPage):
         btn_row.addWidget(self.btn_calc)
         btn_row.addWidget(self.btn_clear)
         btn_row.addWidget(self.btn_export)
+        btn_row.addStretch(1)
         layout.addLayout(btn_row)
 
         self.table = QTableWidget(0, len(self.HEADERS))
@@ -52,58 +78,81 @@ class ConductivityPage(BaseCalculatorPage):
         self.table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.table)
 
+        note = QLabel(
+            f"说明：表格中按 {INPUT_PRECISION} 位小数 / {DISPLAY_PRECISION} 位有效数字显示，"
+            "导出的 Excel 保存完整精度数值。"
+        )
+        note.setStyleSheet("color: #6b7c8f; font-size: 9pt;")
+        layout.addWidget(note)
+
         self.btn_calc.clicked.connect(self._calculate)
         self.btn_clear.clicked.connect(self._clear)
         self.btn_export.clicked.connect(self._export)
 
+    def _make_number_edit(self, placeholder=""):
+        """带数字校验器的输入框：支持 1e-5 这类科学计数法。"""
+        edit = QLineEdit()
+        edit.setValidator(make_number_validator(edit))
+        if placeholder:
+            edit.setPlaceholderText(placeholder)
+        return edit
+
+    # ==================== 操作 ====================
     def _calculate(self):
+        name = self.name_edit.text().strip() or "样品"
+        texts = (self.res_edit.text(), self.len_edit.text(), self.area_edit.text())
+
+        if not all(t.strip() for t in texts):
+            qmessagebox().warning(self, "提示", "请先填写电阻、长度与横截面积！")
+            return
+
         try:
-            name = self.name_edit.text().strip() or "样品"
-            R = float(self.res_edit.text())
-            L = float(self.len_edit.text())
-            A = float(self.area_edit.text())
+            values = [float(t) for t in texts]
         except ValueError:
-            QMessageBox.warning(self, "提示", "请输入有效的数值！")
+            qmessagebox().warning(self, "提示", "请输入有效的数值！")
             return
 
         try:
-            res = compute_conductivity(R, L, A)
+            res = compute_conductivity(*values)
         except ValueError as e:
-            QMessageBox.warning(self, "提示", str(e))
+            qmessagebox().warning(self, "提示", str(e))
             return
 
-        row = self.table.rowCount()
-        self.table.insertRow(row)
-        values = [name, f"{R:.4f}", f"{L:.4f}", f"{A:.4f}",
-                  f"{res['rho']:.6e}", f"{res['sigma']:.6e}"]
-        for col, v in enumerate(values):
-            self.table.setItem(row, col, QTableWidgetItem(v))
+        resistance, length, area = values
+        row_index = self.table.rowCount()
+        self.table.insertRow(row_index)
+        display_values = [
+            name, fmt(resistance), fmt(length), fmt(area),
+            fmt(res['rho']), fmt(res['sigma']),
+        ]
+        for column, text in enumerate(display_values):
+            self.table.setItem(row_index, column, QTableWidgetItem(text))
 
+        # 导出保存完整精度，避免与界面显示不一致造成误解
         self.result_data.append({
             "样品名称": name,
-            "电阻 (Ω)": R,
-            "长度 (cm)": L,
-            "横截面积 (cm²)": A,
+            "电阻 (Ω)": resistance,
+            "长度 (cm)": length,
+            "横截面积 (cm²)": area,
             "电阻率 (Ω·cm)": res['rho'],
             "电导率 (S/cm)": res['sigma'],
         })
 
-        self.name_edit.clear()
-        self.res_edit.clear()
-        self.len_edit.clear()
-        self.area_edit.clear()
+        for edit in (self.name_edit, self.res_edit, self.len_edit, self.area_edit):
+            edit.clear()
+        self.res_edit.setFocus()
 
     def _clear(self):
+        if not self.result_data:
+            return
+        ret = qmessagebox().question(
+            self, "确认清空", "确定要清空所有已计算的记录吗？",
+            _MessageBox.Yes | _MessageBox.No, _MessageBox.No,
+        )
+        if ret != _MessageBox.Yes:
+            return
         self.table.setRowCount(0)
         self.result_data.clear()
 
     def _export(self):
-        if not self.result_data:
-            QMessageBox.warning(self, "提示", "当前没有可导出的数据！")
-            return
-        file_path, _ = QFileDialog.getSaveFileName(self, "导出Excel", "", "Excel文件 (*.xlsx)")
-        if file_path:
-            if not file_path.lower().endswith(".xlsx"):
-                file_path += ".xlsx"
-            export_to_excel(self.result_data, file_path)
-            QMessageBox.information(self, "成功", f"文件已导出至：{file_path}")
+        export_rows_with_dialog(self, self.result_data, headers=self.HEADERS)
